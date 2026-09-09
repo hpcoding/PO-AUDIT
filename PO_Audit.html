@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>PO Audit — Live Scan</title>
+<style>
+  :root{
+    --bg: #F4F5FA;
+    --panel: #FFFFFF;
+    --panel-2: #EEF0F7;
+    --line: #DCE0EA;
+    --text: #14162B;
+    --text-dim: #6B7080;
+    --brand: #3100E6;
+    --brand-dim: #E7E2FB;
+    --amber: #B45309;
+    --amber-dim: #FCEED2;
+    --green: #158A4E;
+    --green-dim: #DFF6E9;
+    --red: #D6293B;
+    --red-dim: #FCE1E4;
+    --neutral: #5B6472;
+    --neutral-dim: #E7E9EF;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--sans); height:100%;}
+  #app{max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column;}
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel);
+  }
+  .brand-lockup{display:flex; align-items:center; gap:8px;}
+  .brand-logo{height:24px; width:auto; display:block;}
+  .topbar .brand{font-size:12px; letter-spacing:.03em; color:var(--text-dim); font-weight:600;}
+  .topbar .po-tag{font-family:var(--mono); font-size:15px; font-weight:600; color:var(--text);}
+
+  .screen{flex:1; padding:16px; display:none;}
+  .screen.active{display:block;}
+
+  h1{font-size:20px; font-weight:600; margin:4px 0 4px;}
+  p.sub{color:var(--text-dim); font-size:13px; margin:0 0 20px; line-height:1.5;}
+
+  label{display:block; font-size:12px; color:var(--text-dim); margin:0 0 6px; font-weight:600;}
+  input[type=text], textarea{
+    width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:12px 14px; font-size:15px; font-family:var(--mono);
+    outline:none;
+  }
+  input[type=text]:focus, textarea:focus{border-color:var(--brand);}
+  textarea{font-family:var(--mono); font-size:13px; min-height:120px; resize:vertical; line-height:1.5;}
+  .field{margin-bottom:18px;}
+  .hint{font-size:12px; color:var(--text-dim); margin-top:6px;}
+
+  button{
+    font-family:var(--sans); font-size:15px; font-weight:600; border:none; border-radius:8px;
+    padding:14px 18px; cursor:pointer; width:100%;
+  }
+  button:active{transform:scale(0.98);}
+  .btn-primary{background:var(--brand); color:#FFFFFF;}
+  .btn-secondary{background:var(--panel-2); color:var(--text); border:1px solid var(--line);}
+  .btn-danger{background:var(--red); color:#fff;}
+  .btn-ghost{background:transparent; color:var(--text-dim); border:1px solid var(--line);}
+  .btn-row{display:flex; gap:10px;}
+  .btn-row button{flex:1;}
+
+  .history-list{margin-top:22px;}
+  .history-item{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+    padding:12px 14px; margin-bottom:8px; cursor:pointer;
+  }
+  .history-item .po{font-family:var(--mono); font-weight:600; font-size:14px;}
+  .history-item .meta{font-size:12px; color:var(--text-dim); margin-top:2px;}
+  .status-pill{font-size:11px; font-weight:700; padding:3px 8px; border-radius:20px; letter-spacing:.02em;}
+  .status-inprogress{background:var(--amber-dim); color:var(--amber);}
+  .status-passed{background:var(--green-dim); color:var(--green);}
+  .status-failed{background:var(--red-dim); color:var(--red);}
+
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px;}
+  .stat{background:var(--panel-2); border-radius:8px; padding:10px 6px; text-align:center;}
+  .stat .n{font-family:var(--mono); font-size:20px; font-weight:700; line-height:1.1;}
+  .stat .l{font-size:10px; color:var(--text-dim); margin-top:3px; letter-spacing:.02em;}
+  .stat.expected .n{color:var(--text);}
+  .stat.found .n{color:var(--green);}
+  .stat.missing .n{color:var(--amber);}
+  .stat.unexpected .n{color:var(--red);}
+
+  .scan-input-wrap{margin-bottom:12px;}
+  #scanInput{
+    font-size:20px; text-align:center; padding:18px 14px; letter-spacing:.02em;
+  }
+
+  .flash{
+    border-radius:8px; padding:14px; text-align:center; margin-bottom:12px;
+    font-family:var(--mono); font-size:15px; font-weight:700; min-height:52px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .flash.idle{background:var(--panel-2); color:var(--text-dim); font-weight:500; font-size:13px;}
+  .flash.matched{background:var(--green-dim); color:var(--green);}
+  .flash.duplicate{background:var(--amber-dim); color:var(--amber);}
+  .flash.unexpected{background:var(--red-dim); color:var(--red);}
+  .flash.pending{background:var(--neutral-dim); color:var(--neutral);}
+
+  .badge.pending{background:var(--neutral-dim); color:var(--neutral);}
+
+  .pending-mode-banner{
+    background:var(--neutral-dim); color:var(--neutral); border-radius:8px; padding:14px;
+    text-align:center; font-size:13px; font-weight:600; margin-bottom:16px; line-height:1.5;
+  }
+
+  .master-list-toggle{
+    font-size:12px; color:var(--brand); text-align:center; padding:9px; margin-bottom:12px;
+    border:1px dashed var(--brand); border-radius:6px; cursor:pointer; font-weight:600;
+    background:var(--brand-dim);
+  }
+
+  .contributors-line{
+    font-size:12px; color:var(--text-dim); text-align:center; margin-bottom:10px; min-height:16px;
+  }
+  .contributors-line .who{color:var(--text); font-weight:600;}
+
+  .complete-banner{
+    background:var(--green-dim); color:var(--green); border:1px solid var(--green);
+    border-radius:8px; padding:10px 12px; text-align:center; font-size:13px; font-weight:700;
+    margin-bottom:12px;
+  }
+
+  .tabs{display:flex; gap:8px; margin:16px 0 10px;}
+  .tab{
+    flex:1; text-align:center; padding:8px; font-size:12px; font-weight:600; color:var(--text-dim);
+    background:var(--panel-2); border-radius:6px; border:1px solid var(--line); cursor:pointer;
+  }
+  .tab.active{color:var(--brand); border-color:var(--brand);}
+
+  .log{max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;}
+  .log-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 12px; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:13px;
+  }
+  .log-row:last-child{border-bottom:none;}
+  .log-row .lp{font-weight:600;}
+  .log-row .badge{font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px;}
+  .badge.matched{background:var(--green-dim); color:var(--green);}
+  .badge.duplicate{background:var(--amber-dim); color:var(--amber);}
+  .badge.unexpected{background:var(--red-dim); color:var(--red);}
+  .empty-note{color:var(--text-dim); font-size:13px; text-align:center; padding:24px 12px;}
+
+  .footer-actions{margin-top:16px;}
+
+  .result-banner{
+    border-radius:10px; padding:26px 16px; text-align:center; margin-bottom:18px;
+  }
+  .result-banner.pass{background:var(--green-dim);}
+  .result-banner.fail{background:var(--red-dim);}
+  .result-banner .big{font-size:22px; font-weight:700;}
+  .result-banner.pass .big{color:var(--green);}
+  .result-banner.fail .big{color:var(--red);}
+  .result-banner .small{font-size:12px; color:var(--text-dim); margin-top:6px;}
+
+  .section-title{font-size:12px; font-weight:700; color:var(--text-dim); letter-spacing:.03em; margin:18px 0 8px;}
+  .chip-list{display:flex; flex-wrap:wrap; gap:6px;}
+  .chip{font-family:var(--mono); font-size:12px; background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:4px 8px;}
+
+  .modal-overlay{
+    position:absolute; inset:0; background:rgba(0,0,0,0.6); display:none;
+    align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modal-overlay.active{display:flex;}
+  .modal-box{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; max-width:400px; width:100%;}
+  .modal-box h3{margin:0 0 8px; font-size:16px;}
+  .modal-box p{color:var(--text-dim); font-size:13px; line-height:1.5; margin:0 0 18px;}
+
+  .share-note{
+    font-size:11px; color:var(--text-dim); text-align:center; margin-top:14px; line-height:1.5;
+  }
+
+  .report-page{
+    background:#ffffff; color:#12161B; border-radius:12px; padding:20px; margin-top:4px;
+  }
+  .report-title{font-size:18px; font-weight:700; margin-bottom:4px;}
+  .report-meta{font-size:12px; color:#5B6470; margin-bottom:16px;}
+  .report-banner{text-align:center; font-weight:700; font-size:16px; border-radius:8px; padding:12px; margin-bottom:16px;}
+  .report-banner.pass{background:#DCF3E7; color:#0F6E42;}
+  .report-banner.fail{background:#FBE1E1; color:#A32D2D;}
+  .report-stats{display:grid; grid-template-columns:repeat(auto-fit, minmax(72px,1fr)); gap:6px; margin-bottom:18px;}
+  .report-stat{background:#F2F3F5; border-radius:6px; padding:8px 4px; text-align:center;}
+  .report-stat .rv{font-family:var(--mono); font-size:15px; font-weight:700;}
+  .report-stat .rl{font-size:9px; color:#5B6470; margin-top:2px; letter-spacing:.02em;}
+  .report-section-title{font-size:12px; font-weight:700; color:#333; margin:18px 0 6px; letter-spacing:.02em;}
+  .report-table{width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px;}
+  .report-table th, .report-table td{border:1px solid #DADEE3; padding:6px 8px; text-align:left; font-family:var(--mono);}
+  .report-table th{background:#F2F3F5; font-family:var(--sans); font-weight:700; font-size:11px;}
+  .rstatus.found, .rstatus.matched{color:#0F6E42; font-weight:700;}
+  .rstatus.missing, .rstatus.unexpected{color:#A32D2D; font-weight:700;}
+  .rstatus.duplicate{color:#8A5A00; font-weight:700;}
+
+  @media print{
+    body{background:#fff !important;}
+    .no-print{display:none !important;}
+    #app{max-width:100% !important;}
+    .screen{padding:0 !important;}
+    * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar no-print">
+    <div class="brand-lockup">
+      <img class="brand-logo" id="topbarLogo" alt="GEODIS">
+      <span class="brand">PO AUDIT</span>
+    </div>
+    <span class="po-tag" id="topPoTag">—</span>
+  </div>
+
+  <!-- SETUP SCREEN -->
+  <div class="screen active" id="screen-setup">
+    <h1>Start an audit</h1>
+    <p class="sub">Enter the PO number. If picking isn't finished yet, you can start scanning pallets as they hit the stage location and add the master LP list later — everything already scanned will auto-match the moment it arrives.</p>
+
+    <div class="field">
+      <label for="poInput">PO number</label>
+      <input type="text" id="poInput" inputmode="numeric" placeholder="e.g. 50576539">
+    </div>
+
+    <div class="field">
+      <label for="lpTextarea">Master LP list (optional — add now or later)</label>
+      <textarea id="lpTextarea" placeholder="Paste LPs here if picking is done — otherwise leave blank and start scanning"></textarea>
+      <div class="hint" id="lpCountHint">0 LPs detected — leave blank to start scanning first</div>
+    </div>
+
+    <button class="btn-primary" id="startAuditBtn">Start audit</button>
+
+    <div class="history-list" id="historyList"></div>
+  </div>
+
+  <!-- SCAN SCREEN -->
+  <div class="screen" id="screen-scan">
+    <div class="field no-print" style="margin-bottom:14px;">
+      <label for="scannerNameInput">Scanning as</label>
+      <input type="text" id="scannerNameInput" placeholder="Your name (optional, helps split the work)">
+    </div>
+
+    <div class="stats" id="statsGrid">
+      <div class="stat expected"><div class="n" id="statExpected">0</div><div class="l">EXPECTED</div></div>
+      <div class="stat found"><div class="n" id="statFound">0</div><div class="l">FOUND</div></div>
+      <div class="stat missing"><div class="n" id="statMissing">0</div><div class="l">MISSING</div></div>
+      <div class="stat unexpected"><div class="n" id="statUnexpected">0</div><div class="l">UNEXPECTED</div></div>
+    </div>
+    <div class="pending-mode-banner" id="pendingModeBanner" style="display:none;"></div>
+
+    <div class="master-list-toggle no-print" id="masterListToggle">+ Add master list</div>
+
+    <div class="contributors-line" id="contributorsLine"></div>
+
+    <div class="complete-banner" id="completeBanner" style="display:none;">✓ All pallets accounted for — ready to finish</div>
+
+    <div class="scan-input-wrap">
+      <input type="text" id="scanInput" placeholder="Scan or type LP" autocomplete="off" autocorrect="off" autocapitalize="off">
+    </div>
+
+    <div class="flash idle" id="flashArea">Scan a pallet to begin</div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="log">Recent scans</div>
+      <div class="tab" data-tab="missing">Still missing</div>
+    </div>
+
+    <div class="log" id="logPanel"></div>
+    <div class="log" id="missingPanel" style="display:none;"></div>
+
+    <div class="footer-actions btn-row no-print">
+      <button class="btn-ghost" id="backToSetupBtn">Switch PO</button>
+      <button class="btn-primary" id="finishAuditBtn">Finish audit</button>
+    </div>
+    <div class="share-note no-print">Live for anyone scanning PO <span id="shareNotePo"></span> — step away anytime, whoever's left can pick up where you stopped. Finishing early with pallets still open just hands the rest off cleanly — it doesn't lose your progress.</div>
+  </div>
+
+  <!-- RESULT SCREEN -->
+  <div class="screen" id="screen-result">
+    <div class="result-banner" id="resultBanner">
+      <div class="big" id="resultBig">AUDIT PASSED</div>
+      <div class="small" id="resultSmall"></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat expected"><div class="n" id="rStatExpected">0</div><div class="l">EXPECTED</div></div>
+      <div class="stat found"><div class="n" id="rStatFound">0</div><div class="l">FOUND</div></div>
+      <div class="stat missing"><div class="n" id="rStatMissing">0</div><div class="l">MISSING</div></div>
+      <div class="stat unexpected"><div class="n" id="rStatUnexpected">0</div><div class="l">UNEXPECTED</div></div>
+    </div>
+
+    <div id="resultMissingSection">
+      <div class="section-title">MISSING LP</div>
+      <div class="chip-list" id="resultMissingChips"></div>
+    </div>
+    <div id="resultUnexpectedSection">
+      <div class="section-title">UNEXPECTED SCANS</div>
+      <div class="chip-list" id="resultUnexpectedChips"></div>
+    </div>
+
+    <div class="footer-actions">
+      <div class="btn-row" style="margin-bottom:10px;">
+        <button class="btn-secondary" id="viewReportBtn">View report</button>
+        <button class="btn-secondary" id="exportCsvBtn">Export CSV</button>
+      </div>
+      <button class="btn-primary" id="newAuditBtn">New audit</button>
+    </div>
+  </div>
+
+  <!-- REPORT SCREEN -->
+  <div class="screen" id="screen-report">
+    <div class="btn-row no-print" style="margin-bottom:16px;">
+      <button class="btn-ghost" id="backFromReportBtn">Back</button>
+      <button class="btn-primary" id="printReportBtn">Print / save PDF</button>
+    </div>
+    <div class="report-page" id="reportContent"></div>
+  </div>
+
+  <div class="modal-overlay no-print" id="modalOverlay">
+    <div class="modal-box">
+      <h3 id="modalTitle">Finish audit?</h3>
+      <p id="modalBody"></p>
+      <div class="field">
+        <label for="auditedByInput">Audited by (optional)</label>
+        <input type="text" id="auditedByInput" placeholder="Your name">
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" id="modalCancelBtn">Cancel</button>
+        <button class="btn-danger" id="modalConfirmBtn">Finish</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay no-print" id="masterListModalOverlay">
+    <div class="modal-box">
+      <h3>Add master LP list</h3>
+      <p>Paste the WMS export once picking is complete. Every pallet already scanned will automatically re-match against it — nothing needs to be rescanned.</p>
+      <div class="field">
+        <textarea id="masterListTextarea" placeholder="Paste LPs here — one per line, or comma separated"></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" id="masterListCancelBtn">Cancel</button>
+        <button class="btn-primary" id="masterListSaveBtn">Save &amp; match</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var LOGO_DATA_URI = 'data:image/png;base64,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';
+  document.getElementById('topbarLogo').src = LOGO_DATA_URI;
+
+  var state = {
+    po: null,
+    audit: null,
+    pollTimer: null,
+    activeTab: 'log',
+    scannerName: '',
+    completionAnnounced: false
+  };
+
+  function key(po){ return 'audit:' + po; }
+
+  function screen(name){
+    document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+    document.getElementById('screen-' + name).classList.add('active');
+  }
+
+  function normLP(v){ return (v || '').trim(); }
+
+  // Comparison key: strips leading zeros so "000000082968503" and "82968503"
+  // are treated as the same pallet, no matter which side has the padding.
+  // The raw, as-entered value is still what's stored and displayed everywhere.
+  function canon(v){
+    var s = normLP(v);
+    var stripped = s.replace(/^0+/, '');
+    return stripped.length ? stripped : '0';
+  }
+
+  function parseLPList(text){
+    var parts = text.split(/[\n,\t;]+/).map(normLP).filter(function(v){ return v.length > 0; });
+    var seen = {}; var out = [];
+    parts.forEach(function(p){
+      var c = canon(p);
+      if(!seen[c]){ seen[c]=true; out.push(p); }
+    });
+    return out;
+  }
+
+  function computeStats(audit){
+    var hasMaster = audit.systemLPs.length > 0;
+
+    var systemCanonSet = {};
+    var systemCanonToOriginal = {};
+    audit.systemLPs.forEach(function(lp){
+      var c = canon(lp);
+      systemCanonSet[c] = true;
+      if(!(c in systemCanonToOriginal)) systemCanonToOriginal[c] = lp;
+    });
+
+    var scannedCanonCount = {};
+    var scannedCanonToOriginal = {};
+    audit.scans.forEach(function(s){
+      var c = canon(s.lp);
+      scannedCanonCount[c] = (scannedCanonCount[c]||0) + 1;
+      if(!(c in scannedCanonToOriginal)) scannedCanonToOriginal[c] = s.lp;
+    });
+
+    var missing = [], unexpected = [], pendingCount = 0, foundCount = 0;
+
+    if(hasMaster){
+      var foundCanon = {}; var unexpectedCanon = {};
+      Object.keys(scannedCanonCount).forEach(function(c){
+        if(systemCanonSet[c]) foundCanon[c] = true; else unexpectedCanon[c] = true;
+      });
+      missing = Object.keys(systemCanonSet)
+        .filter(function(c){ return !foundCanon[c]; })
+        .map(function(c){ return systemCanonToOriginal[c]; });
+      unexpected = Object.keys(unexpectedCanon).map(function(c){ return scannedCanonToOriginal[c]; });
+      foundCount = Object.keys(foundCanon).length;
+    } else {
+      pendingCount = Object.keys(scannedCanonCount).length;
+    }
+
+    var duplicateExtra = 0;
+    Object.keys(scannedCanonCount).forEach(function(c){ if(scannedCanonCount[c] > 1) duplicateExtra += (scannedCanonCount[c]-1); });
+
+    return {
+      hasMaster: hasMaster,
+      pendingCount: pendingCount,
+      expected: hasMaster ? Object.keys(systemCanonSet).length : 0,
+      found: foundCount,
+      missing: missing,
+      unexpected: unexpected,
+      duplicateExtra: duplicateExtra
+    };
+  }
+
+  // Recomputes every scan's status from scratch against the audit's current
+  // master list. Called whenever the master list is attached or edited, so
+  // pallets scanned before picking finished retroactively resolve to
+  // matched / unexpected once the real list shows up.
+  function recomputeStatuses(audit){
+    var systemCanonSet = {};
+    audit.systemLPs.forEach(function(lp){ systemCanonSet[canon(lp)] = true; });
+    var hasMaster = audit.systemLPs.length > 0;
+    var seen = {};
+    audit.scans.forEach(function(s){
+      var c = canon(s.lp);
+      var isRepeat = !!seen[c];
+      if(hasMaster){
+        s.status = systemCanonSet[c] ? (isRepeat ? 'duplicate' : 'matched') : 'unexpected';
+      } else {
+        s.status = isRepeat ? 'duplicate' : 'pending';
+      }
+      seen[c] = true;
+    });
+  }
+
+  function beep(kind){
+    try{
+      var ctx = window.__audioCtx || (window.__audioCtx = new (window.AudioContext || window.webkitAudioContext)());
+      var o = ctx.createOscillator(); var g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sine';
+      var freq = kind === 'matched' ? 880 : kind === 'duplicate' ? 440 : kind === 'pending' ? 660 : 220;
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.16);
+      o.start(); o.stop(ctx.currentTime+0.17);
+    }catch(e){}
+  }
+
+  // ---------- SETUP SCREEN ----------
+  var lpTextarea = document.getElementById('lpTextarea');
+  var lpCountHint = document.getElementById('lpCountHint');
+  lpTextarea.addEventListener('input', function(){
+    var n = parseLPList(lpTextarea.value).length;
+    lpCountHint.textContent = n + ' LP' + (n===1?'':'s') + ' detected';
+  });
+
+  document.getElementById('startAuditBtn').addEventListener('click', function(){
+    var po = normLP(document.getElementById('poInput').value);
+    var lps = parseLPList(lpTextarea.value);
+    if(!po){ document.getElementById('poInput').style.borderColor = 'var(--red)'; return; }
+    beginAudit(po, lps);
+  });
+
+  async function beginAudit(po, lps){
+    var k = key(po);
+    var existing = null;
+    try{ existing = await window.storage.get(k, true); }catch(e){ existing = null; }
+    var audit;
+    if(existing && existing.value){
+      audit = JSON.parse(existing.value);
+    } else {
+      audit = { po: po, systemLPs: lps, scans: [], startedAt: new Date().toISOString(), finishedAt: null, finishedStatus: null };
+      try{ await window.storage.set(k, JSON.stringify(audit), true); }catch(e){}
+    }
+    state.po = po;
+    state.audit = audit;
+    enterScanScreen();
+  }
+
+  async function loadHistory(){
+    var listEl = document.getElementById('historyList');
+    listEl.innerHTML = '';
+    var res;
+    try{ res = await window.storage.list('audit:', true); }catch(e){ res = null; }
+    if(!res || !res.keys || res.keys.length === 0) return;
+    var items = [];
+    for(var i=0;i<res.keys.length;i++){
+      try{
+        var r = await window.storage.get(res.keys[i], true);
+        if(r && r.value){ items.push(JSON.parse(r.value)); }
+      }catch(e){}
+    }
+    items.sort(function(a,b){ return new Date(b.startedAt) - new Date(a.startedAt); });
+    if(items.length === 0) return;
+    var title = document.createElement('div');
+    title.className = 'section-title';
+    title.textContent = 'RECENT AUDITS';
+    listEl.appendChild(title);
+    items.slice(0,15).forEach(function(audit){
+      var stats = computeStats(audit);
+      var row = document.createElement('div');
+      row.className = 'history-item';
+      var statusClass = audit.finishedStatus === 'PASSED' ? 'status-passed' : audit.finishedStatus === 'FAILED' ? 'status-failed' : 'status-inprogress';
+      var statusLabel = audit.finishedStatus || 'IN PROGRESS';
+      row.innerHTML =
+        '<div><div class="po">PO ' + escapeHtml(audit.po) + '</div>' +
+        '<div class="meta">' + stats.found + ' / ' + stats.expected + ' found</div></div>' +
+        '<span class="status-pill ' + statusClass + '">' + statusLabel + '</span>';
+      row.addEventListener('click', function(){
+        state.po = audit.po;
+        state.audit = audit;
+        if(audit.finishedStatus){ enterResultScreen(); } else { enterScanScreen(); }
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // ---------- SCAN SCREEN ----------
+  async function enterScanScreen(){
+    document.getElementById('topPoTag').textContent = 'PO ' + state.po;
+    document.getElementById('shareNotePo').textContent = state.po;
+    screen('scan');
+
+    try{
+      var saved = await window.storage.get('scannerName', false);
+      if(saved && saved.value){ state.scannerName = saved.value; }
+    }catch(e){}
+    document.getElementById('scannerNameInput').value = state.scannerName;
+
+    var initStats = computeStats(state.audit);
+    state.completionAnnounced = (initStats.missing.length === 0 && initStats.unexpected.length === 0);
+
+    renderScanScreen();
+    startPolling();
+    setTimeout(function(){ document.getElementById('scanInput').focus(); }, 150);
+  }
+
+  document.getElementById('scannerNameInput').addEventListener('change', async function(){
+    state.scannerName = normLP(this.value);
+    try{ await window.storage.set('scannerName', state.scannerName, false); }catch(e){}
+  });
+
+  function renderScanScreen(){
+    var stats = computeStats(state.audit);
+
+    if(stats.hasMaster){
+      document.getElementById('statsGrid').style.display = 'grid';
+      document.getElementById('pendingModeBanner').style.display = 'none';
+      document.getElementById('statExpected').textContent = stats.expected;
+      document.getElementById('statFound').textContent = stats.found;
+      document.getElementById('statMissing').textContent = stats.missing.length;
+      document.getElementById('statUnexpected').textContent = stats.unexpected.length;
+    } else {
+      document.getElementById('statsGrid').style.display = 'none';
+      var pb = document.getElementById('pendingModeBanner');
+      pb.style.display = 'block';
+      pb.textContent = stats.pendingCount === 0
+        ? 'No master list yet — scan pallets as they arrive, add the list once picking is done.'
+        : stats.pendingCount + ' pallet' + (stats.pendingCount===1?'':'s') + ' scanned and held — they\'ll auto-match the moment you add the master list.';
+    }
+
+    var toggle = document.getElementById('masterListToggle');
+    toggle.textContent = stats.hasMaster
+      ? ('✎ Edit master list (' + stats.expected + ' LPs loaded)')
+      : '+ Add master list';
+
+    renderContributors();
+    renderCompleteBanner(stats);
+    renderLog();
+    renderMissing(stats);
+  }
+
+  function renderContributors(){
+    var el = document.getElementById('contributorsLine');
+    var counts = {};
+    state.audit.scans.forEach(function(s){
+      var name = s.by || 'Unnamed';
+      counts[name] = (counts[name]||0) + 1;
+    });
+    var names = Object.keys(counts);
+    if(names.length === 0){ el.textContent = ''; return; }
+    el.innerHTML = names.map(function(n){
+      return '<span class="who">' + escapeHtml(n) + '</span>: ' + counts[n];
+    }).join('  ·  ');
+  }
+
+  function renderCompleteBanner(stats){
+    var el = document.getElementById('completeBanner');
+    var isComplete = stats.missing.length === 0 && stats.unexpected.length === 0 && stats.expected > 0;
+    if(isComplete){
+      el.style.display = 'block';
+      if(!state.completionAnnounced){
+        state.completionAnnounced = true;
+        beep('matched'); setTimeout(function(){ beep('matched'); }, 180);
+      }
+    } else {
+      el.style.display = 'none';
+      state.completionAnnounced = false;
+    }
+  }
+
+  function renderLog(){
+    var panel = document.getElementById('logPanel');
+    var scans = state.audit.scans.slice().reverse().slice(0, 60);
+    if(scans.length === 0){
+      panel.innerHTML = '<div class="empty-note">No scans yet</div>';
+      return;
+    }
+    panel.innerHTML = scans.map(function(s){
+      var t = new Date(s.ts);
+      var timeStr = t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      var byTag = s.by ? '<span style="color:var(--text-dim); font-size:11px;">' + escapeHtml(s.by) + '</span>' : '';
+      return '<div class="log-row"><span class="lp">' + escapeHtml(s.lp) + '</span>' +
+        '<span style="display:flex; align-items:center; gap:8px;">' +
+        byTag +
+        '<span style="color:var(--text-dim); font-size:11px;">' + timeStr + '</span>' +
+        '<span class="badge ' + s.status + '">' + s.status.toUpperCase() + '</span>' +
+        '</span></div>';
+    }).join('');
+  }
+
+  function renderMissing(stats){
+    var panel = document.getElementById('missingPanel');
+    if(!stats.hasMaster){
+      panel.innerHTML = '<div class="empty-note">No master list yet — add one to see what\'s missing</div>';
+      return;
+    }
+    if(stats.missing.length === 0){
+      panel.innerHTML = '<div class="empty-note">Nothing missing</div>';
+      return;
+    }
+    panel.innerHTML = stats.missing.map(function(lp){
+      return '<div class="log-row"><span class="lp">' + escapeHtml(lp) + '</span>' +
+        '<span class="badge unexpected">MISSING</span></div>';
+    }).join('');
+  }
+
+  document.querySelectorAll('.tab').forEach(function(tab){
+    tab.addEventListener('click', function(){
+      document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+      tab.classList.add('active');
+      state.activeTab = tab.getAttribute('data-tab');
+      document.getElementById('logPanel').style.display = state.activeTab === 'log' ? 'block' : 'none';
+      document.getElementById('missingPanel').style.display = state.activeTab === 'missing' ? 'block' : 'none';
+    });
+  });
+
+  var scanInput = document.getElementById('scanInput');
+  scanInput.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      submitScan(scanInput.value);
+      scanInput.value = '';
+    }
+  });
+
+  async function submitScan(raw){
+    var lp = normLP(raw);
+    if(!lp) return;
+
+    var latest = state.audit;
+    try{
+      var r = await window.storage.get(key(state.po), true);
+      if(r && r.value) latest = JSON.parse(r.value);
+    }catch(e){}
+
+    latest.scans.push({ lp: lp, ts: new Date().toISOString(), status: 'pending', by: state.scannerName || null });
+    recomputeStatuses(latest);
+    var newStatus = latest.scans[latest.scans.length - 1].status;
+    state.audit = latest;
+
+    try{ await window.storage.set(key(state.po), JSON.stringify(latest), true); }catch(e){}
+
+    flashResult(newStatus, lp);
+    beep(newStatus);
+    renderScanScreen();
+  }
+
+  function flashResult(status, lp){
+    var el = document.getElementById('flashArea');
+    el.className = 'flash ' + status;
+    var label = status === 'matched' ? 'MATCHED'
+      : status === 'duplicate' ? 'DUPLICATE — ALREADY SCANNED'
+      : status === 'pending' ? 'HELD — NO MASTER LIST YET'
+      : 'NOT IN SYSTEM';
+    el.textContent = lp + '  ·  ' + label;
+  }
+
+  function startPolling(){
+    stopPolling();
+    state.pollTimer = setInterval(async function(){
+      if(!state.po) return;
+      try{
+        var r = await window.storage.get(key(state.po), true);
+        if(r && r.value){
+          var fresh = JSON.parse(r.value);
+          if(fresh.scans.length !== state.audit.scans.length){
+            state.audit = fresh;
+            renderScanScreen();
+          }
+        }
+      }catch(e){}
+    }, 2500);
+  }
+  function stopPolling(){
+    if(state.pollTimer){ clearInterval(state.pollTimer); state.pollTimer = null; }
+  }
+
+  document.getElementById('backToSetupBtn').addEventListener('click', function(){
+    stopPolling();
+    state.po = null; state.audit = null;
+    document.getElementById('poInput').value = '';
+    lpTextarea.value = '';
+    lpCountHint.textContent = '0 LPs detected — leave blank to start scanning first';
+    screen('setup');
+    loadHistory();
+  });
+
+  // ---------- MASTER LIST (add/edit any time) ----------
+  document.getElementById('masterListToggle').addEventListener('click', function(){
+    document.getElementById('masterListTextarea').value = state.audit.systemLPs.join('\n');
+    document.getElementById('masterListModalOverlay').classList.add('active');
+  });
+  document.getElementById('masterListCancelBtn').addEventListener('click', function(){
+    document.getElementById('masterListModalOverlay').classList.remove('active');
+  });
+  document.getElementById('masterListSaveBtn').addEventListener('click', async function(){
+    var lps = parseLPList(document.getElementById('masterListTextarea').value);
+    var latest = state.audit;
+    try{
+      var r = await window.storage.get(key(state.po), true);
+      if(r && r.value) latest = JSON.parse(r.value);
+    }catch(e){}
+    latest.systemLPs = lps;
+    recomputeStatuses(latest);
+    state.audit = latest;
+    try{ await window.storage.set(key(state.po), JSON.stringify(latest), true); }catch(e){}
+    document.getElementById('masterListModalOverlay').classList.remove('active');
+    renderScanScreen();
+  });
+
+  // ---------- FINISH FLOW ----------
+  document.getElementById('finishAuditBtn').addEventListener('click', function(){
+    if(state.audit.systemLPs.length === 0){
+      document.getElementById('masterListTextarea').value = '';
+      document.getElementById('masterListModalOverlay').classList.add('active');
+      return;
+    }
+
+    var stats = computeStats(state.audit);
+    var modal = document.getElementById('modalOverlay');
+    var title = document.getElementById('modalTitle');
+    var body = document.getElementById('modalBody');
+    var confirmBtn = document.getElementById('modalConfirmBtn');
+    document.getElementById('auditedByInput').value = state.audit.auditedBy || '';
+
+    if(stats.missing.length === 0 && stats.unexpected.length === 0){
+      title.textContent = 'Finish audit — all clear';
+      body.textContent = 'All ' + stats.expected + ' expected pallets were found, with no unexpected scans. This will mark the audit PASSED.';
+      confirmBtn.className = 'btn-primary';
+      confirmBtn.textContent = 'Mark passed';
+    } else {
+      title.textContent = 'Finish with open exceptions?';
+      body.textContent = stats.missing.length + ' missing, ' + stats.unexpected.length + ' unexpected. Finishing now will mark the audit FAILED with these exceptions on record.';
+      confirmBtn.className = 'btn-danger';
+      confirmBtn.textContent = 'Finish anyway';
+    }
+    modal.classList.add('active');
+  });
+
+  document.getElementById('modalCancelBtn').addEventListener('click', function(){
+    document.getElementById('modalOverlay').classList.remove('active');
+  });
+
+  document.getElementById('modalConfirmBtn').addEventListener('click', async function(){
+    document.getElementById('modalOverlay').classList.remove('active');
+    var stats = computeStats(state.audit);
+    var status = (stats.missing.length === 0 && stats.unexpected.length === 0) ? 'PASSED' : 'FAILED';
+    var auditedBy = normLP(document.getElementById('auditedByInput').value);
+    state.audit.finishedAt = new Date().toISOString();
+    state.audit.finishedStatus = status;
+    if(auditedBy) state.audit.auditedBy = auditedBy;
+    try{ await window.storage.set(key(state.po), JSON.stringify(state.audit), true); }catch(e){}
+    stopPolling();
+    enterResultScreen();
+  });
+
+  // ---------- RESULT SCREEN ----------
+  function enterResultScreen(){
+    document.getElementById('topPoTag').textContent = 'PO ' + state.po;
+    screen('result');
+    var stats = computeStats(state.audit);
+    var banner = document.getElementById('resultBanner');
+    var big = document.getElementById('resultBig');
+    var small = document.getElementById('resultSmall');
+
+    var passed = state.audit.finishedStatus === 'PASSED';
+    banner.className = 'result-banner ' + (passed ? 'pass' : 'fail');
+    big.textContent = passed ? 'AUDIT PASSED' : 'AUDIT FAILED';
+    small.textContent = 'PO ' + state.audit.po + ' · finished ' + new Date(state.audit.finishedAt).toLocaleString();
+
+    document.getElementById('rStatExpected').textContent = stats.expected;
+    document.getElementById('rStatFound').textContent = stats.found;
+    document.getElementById('rStatMissing').textContent = stats.missing.length;
+    document.getElementById('rStatUnexpected').textContent = stats.unexpected.length;
+
+    var missingSection = document.getElementById('resultMissingSection');
+    var unexpectedSection = document.getElementById('resultUnexpectedSection');
+
+    if(stats.missing.length === 0){
+      missingSection.style.display = 'none';
+    } else {
+      missingSection.style.display = 'block';
+      document.getElementById('resultMissingChips').innerHTML = stats.missing.map(function(lp){
+        return '<span class="chip">' + escapeHtml(lp) + '</span>';
+      }).join('');
+    }
+
+    if(stats.unexpected.length === 0){
+      unexpectedSection.style.display = 'none';
+    } else {
+      unexpectedSection.style.display = 'block';
+      document.getElementById('resultUnexpectedChips').innerHTML = stats.unexpected.map(function(lp){
+        return '<span class="chip">' + escapeHtml(lp) + '</span>';
+      }).join('');
+    }
+  }
+
+  document.getElementById('newAuditBtn').addEventListener('click', function(){
+    state.po = null; state.audit = null;
+    document.getElementById('poInput').value = '';
+    lpTextarea.value = '';
+    lpCountHint.textContent = '0 LPs detected — leave blank to start scanning first';
+    screen('setup');
+    loadHistory();
+  });
+
+  // ---------- REPORT SCREEN ----------
+  function buildReportData(audit){
+    var stats = computeStats(audit);
+    var systemCanonToOriginal = {};
+    audit.systemLPs.forEach(function(lp){
+      var c = canon(lp);
+      if(!(c in systemCanonToOriginal)) systemCanonToOriginal[c] = lp;
+    });
+    var scannedCanonCount = {};
+    audit.scans.forEach(function(s){
+      var c = canon(s.lp);
+      scannedCanonCount[c] = (scannedCanonCount[c]||0) + 1;
+    });
+    var systemRows = Object.keys(systemCanonToOriginal).map(function(c){
+      return { lp: systemCanonToOriginal[c], status: scannedCanonCount[c] ? 'Found' : 'Missing' };
+    });
+    return { stats: stats, systemRows: systemRows, scanRows: audit.scans.slice() };
+  }
+
+  function statBox(label, value){
+    return '<div class="report-stat"><div class="rv">' + value + '</div><div class="rl">' + label + '</div></div>';
+  }
+
+  function reportTable(headers, rows, statusColIndex){
+    var thead = '<tr>' + headers.map(function(h){ return '<th>' + escapeHtml(h) + '</th>'; }).join('') + '</tr>';
+    var body = rows.map(function(r){
+      return '<tr>' + r.map(function(c, i){
+        var cls = '';
+        if(statusColIndex !== undefined && i === statusColIndex){
+          cls = ' class="rstatus ' + String(c).toLowerCase() + '"';
+        }
+        return '<td' + cls + '>' + escapeHtml(String(c)) + '</td>';
+      }).join('') + '</tr>';
+    }).join('');
+    return '<table class="report-table"><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+  }
+
+  function renderReport(){
+    var data = buildReportData(state.audit);
+    var stats = data.stats;
+    var passed = state.audit.finishedStatus === 'PASSED';
+    var metaBits = ['Finished ' + new Date(state.audit.finishedAt).toLocaleString()];
+    if(state.audit.auditedBy) metaBits.push('Audited by ' + state.audit.auditedBy);
+
+    var html = '';
+    html += '<img src="' + LOGO_DATA_URI + '" alt="GEODIS" style="height:28px; margin-bottom:14px;">';
+    html += '<div class="report-title">PO ' + escapeHtml(state.audit.po) + ' — pallet audit report</div>';
+    html += '<div class="report-meta">' + escapeHtml(metaBits.join(' · ')) + '</div>';
+    html += '<div class="report-banner ' + (passed ? 'pass' : 'fail') + '">' + (passed ? 'AUDIT PASSED' : 'AUDIT FAILED — SEE EXCEPTIONS BELOW') + '</div>';
+
+    html += '<div class="report-stats">' +
+      statBox('Expected', stats.expected) +
+      statBox('Found', stats.found) +
+      statBox('Missing', stats.missing.length) +
+      statBox('Unexpected', stats.unexpected.length) +
+      statBox('Duplicates', stats.duplicateExtra) +
+      '</div>';
+
+    if(stats.missing.length){
+      html += '<div class="report-section-title">Missing LP details (' + stats.missing.length + ')</div>';
+      html += reportTable(['LP'], stats.missing.map(function(lp){ return [lp]; }));
+    }
+    if(stats.unexpected.length){
+      html += '<div class="report-section-title">Unexpected scans (' + stats.unexpected.length + ')</div>';
+      html += reportTable(['LP'], stats.unexpected.map(function(lp){ return [lp]; }));
+    }
+
+    html += '<div class="report-section-title">Full system LP list (' + data.systemRows.length + ')</div>';
+    html += reportTable(['LP', 'Status'], data.systemRows.map(function(r){ return [r.lp, r.status]; }), 1);
+
+    html += '<div class="report-section-title">Full scanned LP list (' + data.scanRows.length + ')</div>';
+    html += reportTable(['LP', 'Time', 'Scanned by', 'Status'], data.scanRows.map(function(r){
+      return [r.lp, new Date(r.ts).toLocaleTimeString(), r.by || '—', r.status];
+    }), 3);
+
+    document.getElementById('reportContent').innerHTML = html;
+  }
+
+  document.getElementById('viewReportBtn').addEventListener('click', function(){
+    screen('report');
+    renderReport();
+  });
+  document.getElementById('backFromReportBtn').addEventListener('click', function(){
+    screen('result');
+  });
+  document.getElementById('printReportBtn').addEventListener('click', function(){
+    window.print();
+  });
+
+  document.getElementById('exportCsvBtn').addEventListener('click', function(){
+    var stats = computeStats(state.audit);
+    var rows = [['PO', state.audit.po], ['Status', state.audit.finishedStatus], ['Expected', stats.expected], ['Found', stats.found], ['Missing count', stats.missing.length], ['Unexpected count', stats.unexpected.length], [], ['Missing LPs']];
+    stats.missing.forEach(function(lp){ rows.push([lp]); });
+    rows.push([], ['Unexpected LPs']);
+    stats.unexpected.forEach(function(lp){ rows.push([lp]); });
+    rows.push([], ['All scans', 'LP', 'Status', 'Time']);
+    state.audit.scans.forEach(function(s){ rows.push(['', s.lp, s.status, s.ts]); });
+
+    var csv = rows.map(function(r){
+      return r.map(function(c){
+        var v = String(c === undefined ? '' : c);
+        if(v.indexOf(',') !== -1 || v.indexOf('"') !== -1){
+          v = '"' + v.replace(/"/g, '""') + '"';
+        }
+        return v;
+      }).join(',');
+    }).join('\n');
+
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'PO_' + state.audit.po + '_audit.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  loadHistory();
+})();
+</script>
+</body>
+</html>
