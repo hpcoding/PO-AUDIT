@@ -426,7 +426,7 @@
     <div class="footer-actions">
       <div class="btn-row" style="margin-bottom:10px;">
         <button class="btn-secondary" id="viewReportBtn">View report</button>
-        <button class="btn-secondary" id="exportCsvBtn">Export CSV</button>
+        <button class="btn-secondary" id="exportCsvBtn">Download Excel</button>
       </div>
       <button class="btn-primary" id="newAuditBtn">New audit</button>
     </div>
@@ -1189,34 +1189,247 @@
     window.print();
   });
 
-  document.getElementById('exportCsvBtn').addEventListener('click', function(){
-    var stats = computeStats(state.audit);
-    var rows = [['PO', state.audit.po], ['Status', state.audit.finishedStatus], ['Expected', stats.expected], ['Found', stats.found], ['Missing count', stats.missing.length], ['Unexpected count', stats.unexpected.length], [], ['Missing LPs']];
-    stats.missing.forEach(function(lp){ rows.push([lp]); });
-    rows.push([], ['Unexpected LPs']);
-    stats.unexpected.forEach(function(lp){ rows.push([lp]); });
-    rows.push([], ['All scans', 'LP', 'Status', 'Time']);
-    state.audit.scans.forEach(function(s){ rows.push(['', s.lp, s.status, s.ts]); });
+  // ---------- EXCEL EXPORT (built in-browser, no libraries, no network) ----------
+  // Writes a real, formatted .xlsx: a minimal ZIP container plus hand-built
+  // sheet XML. LPs are stored as text, so long numbers never turn into 1.98E+11
+  // and leading zeros survive.
+  function xmlEsc(s){
+    return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; });
+  }
+  function colName(i){ var s = ''; i++; while(i > 0){ var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
 
-    var csv = rows.map(function(r){
-      return r.map(function(c){
-        var v = String(c === undefined ? '' : c);
-        if(v.indexOf(',') !== -1 || v.indexOf('"') !== -1){
-          v = '"' + v.replace(/"/g, '""') + '"';
+  // style indexes (see STYLES_XML below)
+  var X = { def:0, title:1, pass:2, fail:3, metaL:4, metaV:5, lblExp:6, lblFound:7, lblMiss:8, lblUnex:9, lblDup:10,
+            numExp:11, numFound:12, numMiss:13, numUnex:14, numDup:15, th:16, txt:17, good:18, bad:19, warn:20,
+            section:21, note:22, center:23 };
+
+  var STYLES_XML =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="10">' +
+      '<font><sz val="10"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="14"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="10"/><color rgb="FF14162B"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>' +
+      '<font><i/><sz val="9"/><color rgb="FF6B7080"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="22"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="10"/><color rgb="FF158A4E"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="10"/><color rgb="FFD6293B"/><name val="Arial"/></font>' +
+      '<font><b/><sz val="10"/><color rgb="FFB45309"/><name val="Arial"/></font>' +
+    '</fonts>' +
+    '<fills count="12">' +
+      '<fill><patternFill patternType="none"/></fill>' +
+      '<fill><patternFill patternType="gray125"/></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF3100E6"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF158A4E"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFD6293B"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFB45309"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFE7E2FB"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFDFF6E9"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFFCE1E4"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFFCEED2"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF14162B"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF5B6472"/></patternFill></fill>' +
+    '</fills>' +
+    '<borders count="2">' +
+      '<border><left/><right/><top/><bottom/><diagonal/></border>' +
+      '<border><left style="thin"><color rgb="FFDCE0EA"/></left><right style="thin"><color rgb="FFDCE0EA"/></right>' +
+        '<top style="thin"><color rgb="FFDCE0EA"/></top><bottom style="thin"><color rgb="FFDCE0EA"/></bottom><diagonal/></border>' +
+    '</borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="24">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center" indent="1"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+      '<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left"/></xf>' +
+      '<xf numFmtId="0" fontId="4" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="4" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="4" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="4" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="4" fillId="11" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="6" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="6" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="6" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="6" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="6" fillId="11" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="3" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" indent="1"/></xf>' +
+      '<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" indent="1"/></xf>' +
+      '<xf numFmtId="0" fontId="7" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>' +
+      '<xf numFmtId="0" fontId="8" fillId="8" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>' +
+      '<xf numFmtId="0" fontId="9" fillId="9" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>' +
+      '<xf numFmtId="0" fontId="4" fillId="10" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center" indent="1"/></xf>' +
+      '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>' +
+    '</cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+    '</styleSheet>';
+
+  // sheet = { rows: [ {h:height, cells:[ [colIndex, value, styleIdx], ... ]} ], cols:[widths], merges:[], freeze:true/false, filter:'A1:E10' }
+  function sheetXml(sh){
+    var x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>';
+    x += '<sheetViews><sheetView workbookViewId="0" showGridLines="0">';
+    if(sh.freezeRow){ x += '<pane ySplit="' + sh.freezeRow + '" topLeftCell="A' + (sh.freezeRow + 1) + '" activePane="bottomLeft" state="frozen"/>'; }
+    x += '</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>';
+    x += '<cols>' + sh.cols.map(function(w, i){ return '<col min="' + (i+1) + '" max="' + (i+1) + '" width="' + w + '" customWidth="1"/>'; }).join('') + '</cols>';
+    x += '<sheetData>';
+    sh.rows.forEach(function(row, ri){
+      if(!row){ return; }
+      x += '<row r="' + (ri + 1) + '"' + (row.h ? ' ht="' + row.h + '" customHeight="1"' : '') + '>';
+      row.cells.forEach(function(c){
+        var ref = colName(c[0]) + (ri + 1);
+        var v = c[1], s = c[2];
+        if(typeof v === 'number'){
+          x += '<c r="' + ref + '" s="' + s + '"><v>' + v + '</v></c>';
+        } else if(v === null || v === ''){
+          x += '<c r="' + ref + '" s="' + s + '"/>';
+        } else {
+          x += '<c r="' + ref + '" s="' + s + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(v) + '</t></is></c>';
         }
-        return v;
-      }).join(',');
-    }).join('\n');
+      });
+      x += '</row>';
+    });
+    x += '</sheetData>';
+    if(sh.filter){ x += '<autoFilter ref="' + sh.filter + '"/>'; }
+    if(sh.merges && sh.merges.length){
+      x += '<mergeCells count="' + sh.merges.length + '">' + sh.merges.map(function(m){ return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>';
+    }
+    x += '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>';
+    x += '<pageSetup orientation="' + (sh.landscape ? 'landscape' : 'portrait') + '" fitToWidth="1" fitToHeight="0"/>';
+    x += '</worksheet>';
+    return x;
+  }
 
-    var blob = new Blob([csv], { type: 'text/csv' });
+  function crc32(bytes){
+    if(!crc32.table){
+      crc32.table = [];
+      for(var n = 0; n < 256; n++){ var c = n; for(var k = 0; k < 8; k++){ c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); } crc32.table[n] = c >>> 0; }
+    }
+    var crc = 0xFFFFFFFF;
+    for(var i = 0; i < bytes.length; i++){ crc = crc32.table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8); }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function le(n, bytes){ var a = []; for(var i = 0; i < bytes; i++){ a.push((n >>> (8 * i)) & 0xFF); } return new Uint8Array(a); }
+
+  // minimal ZIP writer (store, no compression) -- enough for an .xlsx container
+  function makeZip(files){
+    var enc = new TextEncoder();
+    var chunks = [], central = [], offset = 0;
+    files.forEach(function(f){
+      var name = enc.encode(f.name), data = enc.encode(f.data), crc = crc32(data);
+      var local = [le(0x04034b50,4), le(20,2), le(0x0800,2), le(0,2), le(0,2), le(0x0021,2), le(crc,4), le(data.length,4), le(data.length,4), le(name.length,2), le(0,2), name, data];
+      var localSize = 0; local.forEach(function(p){ localSize += p.length; chunks.push(p); });
+      central.push([le(0x02014b50,4), le(20,2), le(20,2), le(0x0800,2), le(0,2), le(0,2), le(0x0021,2), le(crc,4), le(data.length,4), le(data.length,4), le(name.length,2), le(0,2), le(0,2), le(0,2), le(0,2), le(0,4), le(offset,4), name]);
+      offset += localSize;
+    });
+    var cdSize = 0;
+    central.forEach(function(rec){ rec.forEach(function(p){ cdSize += p.length; chunks.push(p); }); });
+    [le(0x06054b50,4), le(0,2), le(0,2), le(files.length,2), le(files.length,2), le(cdSize,4), le(offset,4), le(0,2)].forEach(function(p){ chunks.push(p); });
+    return new Blob(chunks, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
+  function buildWorkbook(audit){
+    var data = buildReportData(audit);
+    var stats = data.stats;
+    var passed = audit.finishedStatus === 'PASSED';
+    var finished = audit.finishedAt ? new Date(audit.finishedAt).toLocaleString() : '';
+
+    // ---- Summary sheet ----
+    var rows = [], merges = [];
+    rows[0] = { h: 36, cells: [[0, 'PO ' + audit.po + '  |  Pallet Audit Report', X.title]].concat([1,2,3,4,5,6,7,8,9].map(function(i){ return [i, '', X.title]; })) };
+    merges.push('A1:J1');
+    rows[1] = { h: 30, cells: [[0, passed ? 'AUDIT PASSED' : 'AUDIT FAILED - SEE EXCEPTIONS BELOW', passed ? X.pass : X.fail]].concat([1,2,3,4,5,6,7,8,9].map(function(i){ return [i, '', passed ? X.pass : X.fail]; })) };
+    merges.push('A2:J2');
+    rows[3] = { cells: [[0, 'Finished', X.metaL], [1, finished, X.metaV]] };
+    rows[4] = { cells: [[0, 'Audited by', X.metaL], [1, audit.auditedBy || '-', X.metaV]] };
+
+    var statDefs = [
+      ['EXPECTED', stats.expected, X.lblExp, X.numExp],
+      ['FOUND', stats.found, X.lblFound, X.numFound],
+      ['MISSING', stats.missing.length, X.lblMiss, X.numMiss],
+      ['UNEXPECTED', stats.unexpected.length, X.lblUnex, X.numUnex],
+      ['DUPLICATES', stats.duplicateExtra, X.lblDup, X.numDup]
+    ];
+    var lblCells = [], numCells = [];
+    statDefs.forEach(function(d, i){
+      var c0 = i * 2, c1 = c0 + 1;
+      lblCells.push([c0, d[0], d[2]], [c1, '', d[2]]);
+      numCells.push([c0, d[1], d[3]], [c1, '', d[3]]);
+      merges.push(colName(c0) + '7:' + colName(c1) + '7');
+      merges.push(colName(c0) + '8:' + colName(c1) + '8');
+    });
+    rows[6] = { h: 22, cells: lblCells };
+    rows[7] = { h: 42, cells: numCells };
+
+    rows[9] = { h: 22, cells: [[0, 'MISSING LPs (' + stats.missing.length + ')', X.section]].concat([1,2,3,4].map(function(i){ return [i, '', X.section]; }))
+                .concat([[5, 'UNEXPECTED SCANS (' + stats.unexpected.length + ')', X.section]]).concat([6,7,8,9].map(function(i){ return [i, '', X.section]; })) };
+    merges.push('A10:E10', 'F10:J10');
+
+    var listLen = Math.max(stats.missing.length, stats.unexpected.length, 1);
+    for(var i = 0; i < listLen; i++){
+      var cells = [];
+      if(stats.missing.length === 0 && i === 0){ cells.push([0, 'None', X.good]); }
+      else if(i < stats.missing.length){ cells.push([0, stats.missing[i], X.txt]); }
+      if(stats.unexpected.length === 0 && i === 0){ cells.push([5, 'None', X.good]); }
+      else if(i < stats.unexpected.length){ cells.push([5, stats.unexpected[i], X.txt]); }
+      rows[10 + i] = { cells: cells };
+    }
+    var summary = { rows: rows, cols: [16,16,16,16,16,16,16,16,16,16], merges: merges, landscape: true };
+
+    // ---- System LPs sheet ----
+    var sysRows = [{ h: 22, cells: [[0, 'LP', X.th], [1, 'Status', X.th]] }];
+    data.systemRows.forEach(function(r){
+      sysRows.push({ cells: [[0, r.lp, X.txt], [1, r.status, r.status === 'Found' ? X.good : X.bad]] });
+    });
+    var sysSheet = { rows: sysRows, cols: [26, 14], freezeRow: 1, filter: 'A1:B' + Math.max(sysRows.length, 2) };
+
+    // ---- Scans sheet ----
+    var scanRows = [{ h: 22, cells: [[0, '#', X.th], [1, 'LP', X.th], [2, 'Time', X.th], [3, 'Scanned by', X.th], [4, 'Status', X.th]] }];
+    data.scanRows.forEach(function(s, i){
+      var st = s.status === 'matched' ? X.good : s.status === 'duplicate' ? X.warn : s.status === 'unexpected' ? X.bad : X.center;
+      scanRows.push({ cells: [[0, i + 1, X.center], [1, s.lp, X.txt], [2, new Date(s.ts).toLocaleString(), X.txt], [3, s.by || '-', X.txt], [4, String(s.status).toUpperCase(), st]] });
+    });
+    var scanSheet = { rows: scanRows, cols: [7, 26, 24, 18, 16], freezeRow: 1, filter: 'A1:E' + Math.max(scanRows.length, 2) };
+
+    var sheets = [['Summary', summary], ['System LPs', sysSheet], ['Scans', scanSheet]];
+    var files = [
+      { name: '[Content_Types].xml', data:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+        sheets.map(function(s, i){ return '<Override PartName="/xl/worksheets/sheet' + (i+1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') +
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+      { name: '_rels/.rels', data:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', data:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+        sheets.map(function(s, i){ return '<sheet name="' + s[0] + '" sheetId="' + (i+1) + '" r:id="rId' + (i+1) + '"/>'; }).join('') + '</sheets></workbook>' },
+      { name: 'xl/_rels/workbook.xml.rels', data:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        sheets.map(function(s, i){ return '<Relationship Id="rId' + (i+1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i+1) + '.xml"/>'; }).join('') +
+        '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: 'xl/styles.xml', data: STYLES_XML }
+    ];
+    sheets.forEach(function(s, i){ files.push({ name: 'xl/worksheets/sheet' + (i+1) + '.xml', data: sheetXml(s[1]) }); });
+    return makeZip(files);
+  }
+
+  document.getElementById('exportCsvBtn').addEventListener('click', function(){
+    var blob = buildWorkbook(state.audit);
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'PO_' + state.audit.po + '_audit.csv';
+    a.download = 'PO_' + state.audit.po + '_Audit_Report.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
   });
 
   loadHistory();
