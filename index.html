@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>PO Audit — Live Scan</title>
+<title>WTW Audit — Live Scan</title>
 <style>
   :root{
     --bg: #F4F5FA;
@@ -274,7 +274,7 @@
   <div class="topbar no-print">
     <div class="brand-lockup">
       <img class="brand-logo" id="topbarLogo" alt="GEODIS">
-      <span class="brand">PO AUDIT</span>
+      <span class="brand">WTW AUDIT</span>
     </div>
     <span class="po-tag" id="topPoTag"></span>
   </div>
@@ -283,7 +283,7 @@
   <div class="screen active" id="screen-setup">
    <div class="setup-grid">
     <div class="hero-card">
-      <h2>Pallet audit, without the spreadsheet</h2>
+      <h2>WTW audit, without the spreadsheet</h2>
       <p>Scan pallets as they land at the stage location and get an instant answer on every one.</p>
       <ol class="hero-steps">
         <li><span class="num">1</span><span>Enter the PO number and start scanning, even before picking is finished.</span></li>
@@ -1146,7 +1146,7 @@
 
     var html = '';
     html += '<img src="' + LOGO_DATA_URI + '" alt="GEODIS" style="height:28px; margin-bottom:14px;">';
-    html += '<div class="report-title">PO ' + escapeHtml(state.audit.po) + ' — pallet audit report</div>';
+    html += '<div class="report-title">PO ' + escapeHtml(state.audit.po) + ' — WTW audit report</div>';
     html += '<div class="report-meta">' + escapeHtml(metaBits.join(' · ')) + '</div>';
     html += '<div class="report-banner ' + (passed ? 'pass' : 'fail') + '">' + (passed ? 'AUDIT PASSED' : 'AUDIT FAILED — SEE EXCEPTIONS BELOW') + '</div>';
 
@@ -1425,7 +1425,7 @@
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'PO_' + state.audit.po + '_Audit_Report.xlsx';
+    a.download = 'PO_' + state.audit.po + '_WTW_Audit_Report.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
